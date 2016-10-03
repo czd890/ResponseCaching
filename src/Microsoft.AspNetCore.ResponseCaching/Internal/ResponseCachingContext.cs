@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Headers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
+using System.Globalization;
 
 namespace Microsoft.AspNetCore.ResponseCaching.Internal
 {
@@ -15,12 +16,14 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
     {
         private static readonly CacheControlHeaderValue EmptyCacheControl = new CacheControlHeaderValue();
 
-        private ResponseHeaders _responseHeaders;
-        private CacheControlHeaderValue _responseCacheControl;
         private DateTimeOffset? _responseDate;
         private bool _parsedResponseDate;
         private DateTimeOffset? _responseExpires;
         private bool _parsedResponseExpires;
+        private TimeSpan? _responseSharedMaxAge;
+        private bool _parsedResponseSharedMaxAge;
+        private TimeSpan? _responseMaxAge;
+        private bool _parsedResponseMaxAge;
 
         internal ResponseCachingContext(HttpContext httpContext, ILogger logger)
         {
@@ -56,31 +59,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
 
         internal IHttpSendFileFeature OriginalSendFileFeature { get; set; }
 
-        internal ResponseHeaders CachedResponseHeaders { get; set; }
-
-        internal ResponseHeaders TypedResponseHeaders
-        {
-            get
-            {
-                if (_responseHeaders == null)
-                {
-                    _responseHeaders = HttpContext.Response.GetTypedHeaders();
-                }
-                return _responseHeaders;
-            }
-        }
-
-        internal CacheControlHeaderValue ResponseCacheControlHeaderValue
-        {
-            get
-            {
-                if (_responseCacheControl == null)
-                {
-                    _responseCacheControl = TypedResponseHeaders.CacheControl ?? EmptyCacheControl;
-                }
-                return _responseCacheControl;
-            }
-        }
+        internal IHeaderDictionary CachedResponseHeaders { get; set; }
 
         internal DateTimeOffset? ResponseDate
         {
@@ -89,7 +68,15 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 if (!_parsedResponseDate)
                 {
                     _parsedResponseDate = true;
-                    _responseDate = TypedResponseHeaders.Date;
+                    DateTimeOffset date;
+                    if (DateTimeOffset.TryParse(HttpContext.Response.Headers[HeaderNames.Date], out date))
+                    {
+                        _responseDate = date;
+                    }
+                    else
+                    {
+                        _responseDate = null;
+                    }
                 }
                 return _responseDate;
             }
@@ -108,10 +95,104 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 if (!_parsedResponseExpires)
                 {
                     _parsedResponseExpires = true;
-                    _responseExpires = TypedResponseHeaders.Expires;
+                    DateTimeOffset expires;
+                    if (DateTimeOffset.TryParse(HttpContext.Response.Headers[HeaderNames.Expires], out expires))
+                    {
+                        _responseExpires = expires;
+                    }
+                    else
+                    {
+                        _responseExpires = null;
+                    }
                 }
                 return _responseExpires;
             }
+        }
+
+        internal TimeSpan? ResponseSharedMaxAge
+        {
+            get
+            {
+                if (!_parsedResponseSharedMaxAge)
+                {
+                    _parsedResponseSharedMaxAge = true;
+                    _responseSharedMaxAge = null;
+                    foreach (var header in HttpContext.Response.Headers[HeaderNames.CacheControl])
+                    {
+                        var index = header.IndexOf("s-maxage", StringComparison.OrdinalIgnoreCase);
+                        if (index != -1)
+                        {
+                            index += 8;
+                            int seconds;
+                            if (TryParseValue(index, header, out seconds))
+                            {
+                                _responseSharedMaxAge = TimeSpan.FromSeconds(seconds);
+                            }
+                            break;
+                        }
+                    }
+                }
+                return _responseSharedMaxAge;
+            }
+        }
+
+        internal TimeSpan? ResponseMaxAge
+        {
+            get
+            {
+                if (!_parsedResponseMaxAge)
+                {
+                    _parsedResponseMaxAge = true;
+                    _responseMaxAge = null;
+                    foreach (var header in HttpContext.Response.Headers[HeaderNames.CacheControl])
+                    {
+                        var index = header.IndexOf("max-age", StringComparison.OrdinalIgnoreCase);
+                        if (index != -1)
+                        {
+                            index += 7;
+                            int seconds;
+                            if (TryParseValue(index, header, out seconds))
+                            {
+                                _responseMaxAge = TimeSpan.FromSeconds(seconds);
+                            }
+                            break;
+                        }
+                    }
+                }
+                return _responseMaxAge;
+            }
+        }
+
+        public bool TryParseValue(int startIndex, string header, out int value)
+        {
+            while (startIndex != header.Length)
+            {
+                if (header[startIndex] == '=')
+                {
+                    break;
+                }
+                ++startIndex;
+            }
+            if (startIndex != header.Length)
+            {
+                var endIndex = startIndex + 1;
+                while (endIndex < header.Length)
+                {
+                    var c = header[endIndex];
+                    if ((c >= '0') && (c <= '9'))
+                    {
+                        endIndex++;
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                value = int.Parse(header.Substring(startIndex + 1, endIndex - (startIndex + 1)), NumberStyles.None, NumberFormatInfo.InvariantInfo);
+                return true;
+            }
+            value = 0;
+            return false;
         }
     }
 }

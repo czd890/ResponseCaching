@@ -35,7 +35,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             {
                 foreach (var header in request.Headers[HeaderNames.CacheControl])
                 {
-                    if (header.Equals("no-cache"))
+                    if (header.IndexOf("no-cache", StringComparison.OrdinalIgnoreCase) != -1)
                     {
                         context.Logger.LogRequestWithNoCacheNotCacheable();
                         return false;
@@ -61,8 +61,19 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
 
         public virtual bool IsResponseCacheable(ResponseCachingContext context)
         {
+            var responseCacheControlHeader = context.HttpContext.Response.Headers[HeaderNames.CacheControl];
+
             // Only cache pages explicitly marked with public
-            if (!context.ResponseCacheControlHeaderValue.Public)
+            var isPublic = false;
+            foreach (var header in responseCacheControlHeader)
+            {
+                if (header.IndexOf("public", StringComparison.OrdinalIgnoreCase) != -1)
+                {
+                    isPublic = true;
+                    break;
+                }
+            }
+            if (!isPublic)
             {
                 context.Logger.LogResponseWithoutPublicNotCacheable();
                 return false;
@@ -71,24 +82,30 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             // Check no-store
             foreach (var header in context.HttpContext.Request.Headers[HeaderNames.CacheControl])
             {
-                if (header.Equals("no-store"))
+                if (header.IndexOf("no-store", StringComparison.OrdinalIgnoreCase) != -1)
                 {
                     context.Logger.LogResponseWithNoStoreNotCacheable();
                     return false;
                 }
             }
 
-            if (context.ResponseCacheControlHeaderValue.NoStore)
+            foreach (var header in responseCacheControlHeader)
             {
-                context.Logger.LogResponseWithNoStoreNotCacheable();
-                return false;
+                if (header.IndexOf("no-store", StringComparison.OrdinalIgnoreCase) != -1)
+                {
+                    context.Logger.LogResponseWithNoStoreNotCacheable();
+                    return false;
+                }
             }
 
             // Check no-cache
-            if (context.ResponseCacheControlHeaderValue.NoCache)
+            foreach (var header in responseCacheControlHeader)
             {
-                context.Logger.LogResponseWithNoCacheNotCacheable();
-                return false;
+                if (header.IndexOf("no-cache", StringComparison.OrdinalIgnoreCase) != -1)
+                {
+                    context.Logger.LogResponseWithNoCacheNotCacheable();
+                    return false;
+                }
             }
 
             var response = context.HttpContext.Response;
@@ -109,10 +126,13 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             }
 
             // Check private
-            if (context.ResponseCacheControlHeaderValue.Private)
+            foreach (var header in responseCacheControlHeader)
             {
-                context.Logger.LogResponseWithPrivateNotCacheable();
-                return false;
+                if (header.IndexOf("private", StringComparison.OrdinalIgnoreCase) != -1)
+                {
+                    context.Logger.LogResponseWithPrivateNotCacheable();
+                    return false;
+                }
             }
 
             // Check response code
@@ -125,8 +145,8 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             // Check response freshness
             if (!context.ResponseDate.HasValue)
             {
-                if (!context.ResponseCacheControlHeaderValue.SharedMaxAge.HasValue &&
-                    !context.ResponseCacheControlHeaderValue.MaxAge.HasValue &&
+                if (!context.ResponseSharedMaxAge.HasValue &&
+                    !context.ResponseMaxAge.HasValue &&
                     context.ResponseTime.Value >= context.ResponseExpires)
                 {
                     context.Logger.LogExpirationExpiresExceeded(context.ResponseTime.Value, context.ResponseExpires.Value);
@@ -138,22 +158,20 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 var age = context.ResponseTime.Value - context.ResponseDate.Value;
 
                 // Validate shared max age
-                var sharedMaxAge = context.ResponseCacheControlHeaderValue.SharedMaxAge;
-                if (age >= sharedMaxAge)
+                if (age >= context.ResponseSharedMaxAge)
                 {
-                    context.Logger.LogExpirationSharedMaxAgeExceeded(age, sharedMaxAge.Value);
+                    context.Logger.LogExpirationSharedMaxAgeExceeded(age, context.ResponseSharedMaxAge.Value);
                     return false;
                 }
-                else if (!sharedMaxAge.HasValue)
+                else if (!context.ResponseSharedMaxAge.HasValue)
                 {
                     // Validate max age
-                    var maxAge = context.ResponseCacheControlHeaderValue.MaxAge;
-                    if (age >= maxAge)
+                    if (age >= context.ResponseMaxAge)
                     {
-                        context.Logger.LogExpirationMaxAgeExceeded(age, maxAge.Value);
+                        context.Logger.LogExpirationMaxAgeExceeded(age, context.ResponseMaxAge.Value);
                         return false;
                     }
-                    else if (!maxAge.HasValue)
+                    else if (!context.ResponseMaxAge.HasValue)
                     {
                         // Validate expiration
                         if (context.ResponseTime.Value >= context.ResponseExpires)
@@ -171,7 +189,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
         public virtual bool IsCachedEntryFresh(ResponseCachingContext context)
         {
             var age = context.CachedEntryAge.Value;
-            var cachedControlHeaders = context.CachedResponseHeaders.CacheControl ?? EmptyCacheControl;
+            var cachedControlHeaders = context.CachedResponseHeaders[HeaderNames.CacheControl];
             var requestCacheControlHeaders = context.HttpContext.Request.Headers[HeaderNames.CacheControl];
 
             // Add min-fresh requirements
@@ -182,9 +200,9 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 {
                     index += 9;
                     int seconds;
-                    if (TryParseValue(index, header, out seconds))
+                    if (context.TryParseValue(index, header, out seconds))
                     {
-                        var minFresh = new TimeSpan(0, 0, seconds);
+                        var minFresh = TimeSpan.FromSeconds(seconds);
                         age += minFresh;
                         context.Logger.LogExpirationMinFreshAdded(minFresh);
                     }
@@ -193,27 +211,57 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             }
 
             // Validate shared max age, this overrides any max age settings for shared caches
-            var sharedMaxAge = cachedControlHeaders.SharedMaxAge;
-            if (age >= sharedMaxAge)
+            TimeSpan? cachedSharedMaxAge = null;
+            foreach (var header in cachedControlHeaders)
+            {
+                var index = header.IndexOf("s-maxage", StringComparison.OrdinalIgnoreCase);
+                if (index != -1)
+                {
+                    index += 8;
+                    int seconds;
+                    if (context.TryParseValue(index, header, out seconds))
+                    {
+                        cachedSharedMaxAge = TimeSpan.FromSeconds(seconds);
+                    }
+                    break;
+                }
+            }
+
+            if (age >= cachedSharedMaxAge)
             {
                 // shared max age implies must revalidate
-                context.Logger.LogExpirationSharedMaxAgeExceeded(age, sharedMaxAge.Value);
+                context.Logger.LogExpirationSharedMaxAgeExceeded(age, cachedSharedMaxAge.Value);
                 return false;
             }
-            else if (!sharedMaxAge.HasValue)
+            else if (!cachedSharedMaxAge.HasValue)
             {
-                var cachedMaxAge = cachedControlHeaders.MaxAge;
                 TimeSpan? requestMaxAge = null;
                 foreach (var header in requestCacheControlHeaders)
                 {
-                    var index = header.IndexOf("max-age");
+                    var index = header.IndexOf("max-age", StringComparison.OrdinalIgnoreCase);
                     if (index != -1)
                     {
                         index += 7;
                         int seconds;
-                        if (TryParseValue(index, header, out seconds))
+                        if (context.TryParseValue(index, header, out seconds))
                         {
-                            requestMaxAge = new TimeSpan(0, 0, seconds);
+                            requestMaxAge = TimeSpan.FromSeconds(seconds);
+                        }
+                        break;
+                    }
+                }
+
+                TimeSpan? cachedMaxAge = null;
+                foreach (var header in cachedControlHeaders)
+                {
+                    var index = header.IndexOf("max-age", StringComparison.OrdinalIgnoreCase);
+                    if (index != -1)
+                    {
+                        index += 7;
+                        int seconds;
+                        if (context.TryParseValue(index, header, out seconds))
+                        {
+                            cachedMaxAge = TimeSpan.FromSeconds(seconds);
                         }
                         break;
                     }
@@ -224,29 +272,32 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 if (age >= lowestMaxAge)
                 {
                     // Must revalidate
-                    if (cachedControlHeaders.MustRevalidate)
+                    foreach (var header in cachedControlHeaders)
                     {
-                        context.Logger.LogExpirationMustRevalidate(age, lowestMaxAge.Value);
-                        return false;
+                        if (header.IndexOf("must-revalidate", StringComparison.OrdinalIgnoreCase) != -1)
+                        {
+                            context.Logger.LogExpirationMustRevalidate(age, lowestMaxAge.Value);
+                            return false;
+                        }
                     }
 
-                    // Request allows stale values
                     TimeSpan? requestMaxStale = null;
                     foreach (var header in requestCacheControlHeaders)
                     {
-                        var index = header.IndexOf("max-stale");
+                        var index = header.IndexOf("max-stale", StringComparison.OrdinalIgnoreCase);
                         if (index != -1)
                         {
                             index += 9;
                             int seconds;
-                            if (TryParseValue(index, header, out seconds))
+                            if (context.TryParseValue(index, header, out seconds))
                             {
-                                requestMaxStale = new TimeSpan(0, 0, seconds);
+                                requestMaxStale = TimeSpan.FromSeconds(seconds);
                             }
                             break;
                         }
                     }
 
+                    // Request allows stale values
                     if (requestMaxStale.HasValue && age - lowestMaxAge < requestMaxStale)
                     {
                         context.Logger.LogExpirationMaxStaleSatisfied(age, lowestMaxAge.Value, requestMaxStale.Value);
@@ -259,49 +310,22 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 else if (!cachedMaxAge.HasValue && !requestMaxAge.HasValue)
                 {
                     // Validate expiration
-                    var responseTime = context.ResponseTime.Value;
-                    var expires = context.CachedResponseHeaders.Expires;
-                    if (responseTime >= expires)
+                    DateTimeOffset expires;
+                    if (context.CachedResponseHeaders[HeaderNames.Expires].Count > 0)
                     {
-                        context.Logger.LogExpirationExpiresExceeded(responseTime, expires.Value);
-                        return false;
+                        if (DateTimeOffset.TryParse(context.CachedResponseHeaders[HeaderNames.Expires], out expires))
+                        {
+                            if (context.ResponseTime.Value >= expires)
+                            {
+                                context.Logger.LogExpirationExpiresExceeded(context.ResponseTime.Value, expires);
+                                return false;
+                            }
+                        }
                     }
                 }
             }
 
             return true;
-        }
-
-        private bool TryParseValue(int startIndex, string header, out int value)
-        {
-            while (startIndex != header.Length)
-            {
-                if (header[startIndex] == '=')
-                {
-                    break;
-                }
-                ++startIndex;
-            }
-            if (startIndex != header.Length)
-            {
-                var endIndex = startIndex + 1;
-                while (endIndex < header.Length)
-                {
-                    var cc = header[endIndex];
-                    if ((cc >= '0') && (cc <= '9'))
-                    {
-                        endIndex++;
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-                value = int.Parse(header.Substring(startIndex + 1, endIndex - (startIndex + 1)), NumberStyles.None, NumberFormatInfo.InvariantInfo);
-                return true;
-            }
-            value = 0;
-            return false;
         }
     }
 }

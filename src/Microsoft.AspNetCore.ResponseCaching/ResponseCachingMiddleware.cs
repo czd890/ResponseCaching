@@ -200,7 +200,7 @@ namespace Microsoft.AspNetCore.ResponseCaching
 
             foreach (var header in context.HttpContext.Request.Headers[HeaderNames.CacheControl])
             {
-                if (header.IndexOf("only-if-cached", StringComparison.OrdinalIgnoreCase) != -1)
+                if (header.IndexOf(CacheControlValues.OnlyIfCachedString, StringComparison.OrdinalIgnoreCase) != -1)
                 {
                     _logger.LogGatewayTimeoutServed();
                     context.HttpContext.Response.StatusCode = StatusCodes.Status504GatewayTimeout;
@@ -394,16 +394,16 @@ namespace Microsoft.AspNetCore.ResponseCaching
                 if (!StringValues.IsNullOrEmpty(ifUnmodifiedSince))
                 {
                     DateTimeOffset modified;
-                    if (!DateTimeOffset.TryParse(cachedResponseHeaders[HeaderNames.LastModified], out modified))
+                    if (!ParsingHelpers.TryStringToDate(cachedResponseHeaders[HeaderNames.LastModified], out modified))
                     {
-                        if (!DateTimeOffset.TryParse(cachedResponseHeaders[HeaderNames.Date], out modified))
+                        if (!ParsingHelpers.TryStringToDate(cachedResponseHeaders[HeaderNames.Date], out modified))
                         {
                             return false;
                         }
                     }
 
                     DateTimeOffset unmodifiedSince;
-                    if (DateTimeOffset.TryParse(ifUnmodifiedSince, out unmodifiedSince))
+                    if (ParsingHelpers.TryStringToDate(ifUnmodifiedSince, out unmodifiedSince))
                     {
                         if (modified <= unmodifiedSince)
                         {

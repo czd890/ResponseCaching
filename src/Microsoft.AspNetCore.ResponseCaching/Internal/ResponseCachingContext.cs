@@ -12,8 +12,6 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
 {
     public class ResponseCachingContext
     {
-        private static readonly CacheControlHeaderValue EmptyCacheControl = new CacheControlHeaderValue();
-
         private DateTimeOffset? _responseDate;
         private bool _parsedResponseDate;
         private DateTimeOffset? _responseExpires;

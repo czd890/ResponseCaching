@@ -190,38 +190,19 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             var requestCacheControlHeaders = context.HttpContext.Request.Headers[HeaderNames.CacheControl];
 
             // Add min-fresh requirements
-            foreach (var header in requestCacheControlHeaders)
+            int seconds;
+            if (ParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MinFreshString, out seconds))
             {
-                var index = header.IndexOf(CacheControlValues.MinFreshString, StringComparison.OrdinalIgnoreCase);
-                if (index != -1)
-                {
-                    index += CacheControlValues.MinFreshString.Length;
-                    int seconds;
-                    if (ParsingHelpers.TryParseHeaderValue(index, header, out seconds))
-                    {
-                        var minFresh = TimeSpan.FromSeconds(seconds);
-                        age += minFresh;
-                        context.Logger.LogExpirationMinFreshAdded(minFresh);
-                    }
-                    break;
-                }
+                var minFresh = TimeSpan.FromSeconds(seconds);
+                age += minFresh;
+                context.Logger.LogExpirationMinFreshAdded(minFresh);
             }
 
             // Validate shared max age, this overrides any max age settings for shared caches
             TimeSpan? cachedSharedMaxAge = null;
-            foreach (var header in cachedControlHeaders)
+            if (ParsingHelpers.TryGetHeaderValue(cachedControlHeaders, CacheControlValues.SharedMaxAgeString, out seconds))
             {
-                var index = header.IndexOf(CacheControlValues.SharedMaxAgeString, StringComparison.OrdinalIgnoreCase);
-                if (index != -1)
-                {
-                    index += CacheControlValues.SharedMaxAgeString.Length;
-                    int seconds;
-                    if (ParsingHelpers.TryParseHeaderValue(index, header, out seconds))
-                    {
-                        cachedSharedMaxAge = TimeSpan.FromSeconds(seconds);
-                    }
-                    break;
-                }
+                cachedSharedMaxAge = TimeSpan.FromSeconds(seconds);
             }
 
             if (age >= cachedSharedMaxAge)
@@ -233,35 +214,15 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             else if (!cachedSharedMaxAge.HasValue)
             {
                 TimeSpan? requestMaxAge = null;
-                foreach (var header in requestCacheControlHeaders)
+                if (ParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MaxAgeString, out seconds))
                 {
-                    var index = header.IndexOf(CacheControlValues.MaxAgeString, StringComparison.OrdinalIgnoreCase);
-                    if (index != -1)
-                    {
-                        index += CacheControlValues.MaxAgeString.Length;
-                        int seconds;
-                        if (ParsingHelpers.TryParseHeaderValue(index, header, out seconds))
-                        {
-                            requestMaxAge = TimeSpan.FromSeconds(seconds);
-                        }
-                        break;
-                    }
+                    requestMaxAge = TimeSpan.FromSeconds(seconds);
                 }
 
                 TimeSpan? cachedMaxAge = null;
-                foreach (var header in cachedControlHeaders)
+                if (ParsingHelpers.TryGetHeaderValue(cachedControlHeaders, CacheControlValues.MaxAgeString, out seconds))
                 {
-                    var index = header.IndexOf(CacheControlValues.MaxAgeString, StringComparison.OrdinalIgnoreCase);
-                    if (index != -1)
-                    {
-                        index += CacheControlValues.MaxAgeString.Length;
-                        int seconds;
-                        if (ParsingHelpers.TryParseHeaderValue(index, header, out seconds))
-                        {
-                            cachedMaxAge = TimeSpan.FromSeconds(seconds);
-                        }
-                        break;
-                    }
+                    cachedMaxAge = TimeSpan.FromSeconds(seconds);
                 }
 
                 var lowestMaxAge = cachedMaxAge < requestMaxAge ? cachedMaxAge : requestMaxAge ?? cachedMaxAge;
@@ -279,19 +240,9 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                     }
 
                     TimeSpan? requestMaxStale = null;
-                    foreach (var header in requestCacheControlHeaders)
+                    if (ParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MaxStaleString, out seconds))
                     {
-                        var index = header.IndexOf(CacheControlValues.MaxStaleString, StringComparison.OrdinalIgnoreCase);
-                        if (index != -1)
-                        {
-                            index += CacheControlValues.MaxStaleString.Length;
-                            int seconds;
-                            if (ParsingHelpers.TryParseHeaderValue(index, header, out seconds))
-                            {
-                                requestMaxStale = TimeSpan.FromSeconds(seconds);
-                            }
-                            break;
-                        }
+                        requestMaxStale = TimeSpan.FromSeconds(seconds);
                     }
 
                     // Request allows stale values
@@ -308,15 +259,13 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 {
                     // Validate expiration
                     DateTimeOffset expires;
-                    if (context.CachedResponseHeaders[HeaderNames.Expires].Count > 0)
+                    if (context.CachedResponseHeaders[HeaderNames.Expires].Count > 0 &&
+                        ParsingHelpers.TryParseDate(context.CachedResponseHeaders[HeaderNames.Expires], out expires))
                     {
-                        if (ParsingHelpers.TryStringToDate(context.CachedResponseHeaders[HeaderNames.Expires], out expires))
+                        if (context.ResponseTime.Value >= expires)
                         {
-                            if (context.ResponseTime.Value >= expires)
-                            {
-                                context.Logger.LogExpirationExpiresExceeded(context.ResponseTime.Value, expires);
-                                return false;
-                            }
+                            context.Logger.LogExpirationExpiresExceeded(context.ResponseTime.Value, expires);
+                            return false;
                         }
                     }
                 }

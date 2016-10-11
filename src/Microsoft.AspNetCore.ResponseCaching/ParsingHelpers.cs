@@ -3,6 +3,7 @@
 
 using System;
 using System.Globalization;
+using Microsoft.Extensions.Primitives;
 
 namespace Microsoft.AspNetCore.ResponseCaching.Internal
 {
@@ -29,30 +30,48 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             "d MMM yyyy H:m:s", // RFC 5322 no day-of-week, no zone
         };
 
-        internal static bool TryStringToDate(string input, out DateTimeOffset result)
-        {
-            // Try the various date formats in the order listed above.
-            // We should accept a wide verity of common formats, but only output RFC 1123 style dates.
-            if (DateTimeOffset.TryParseExact(input, DateFormats, DateTimeFormatInfo.InvariantInfo,
-                DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal, out result))
-            {
-                return true;
-            }
+        // Try the various date formats in the order listed above.
+        // We should accept a wide verity of common formats, but only output RFC 1123 style dates.
+        internal static bool TryParseDate(string input, out DateTimeOffset result) => DateTimeOffset.TryParseExact(input, DateFormats, DateTimeFormatInfo.InvariantInfo,
+                DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal, out result);
 
+        internal static bool TryGetHeaderValue(StringValues headers, string headerName, out int value)
+        {
+            value = 0;
+            foreach (var header in headers)
+            {
+                var index = header.IndexOf(headerName, StringComparison.OrdinalIgnoreCase);
+                if (index != -1)
+                {
+                    index += headerName.Length;
+                    if (!TryParseHeaderValue(index, header, out value))
+                    {
+                        break;
+                    }
+                    return true;
+                }
+            }
             return false;
         }
 
-        internal static bool TryParseHeaderValue(int startIndex, string header, out int value)
+        private static bool TryParseHeaderValue(int startIndex, string header, out int value)
         {
+            var found = false;
             while (startIndex != header.Length)
             {
-                if (header[startIndex] == '=')
+                var c = header[startIndex];
+                if (c == '=')
                 {
+                    found = true;
+                }
+                else if (c != ' ')
+                {
+                    --startIndex;
                     break;
                 }
                 ++startIndex;
             }
-            if (startIndex != header.Length)
+            if (found && startIndex != header.Length)
             {
                 var endIndex = startIndex + 1;
                 while (endIndex < header.Length)
@@ -67,8 +86,12 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                         break;
                     }
                 }
-                value = int.Parse(header.Substring(startIndex + 1, endIndex - (startIndex + 1)), NumberStyles.None, NumberFormatInfo.InvariantInfo);
-                return true;
+                var length = endIndex - (startIndex + 1);
+                if (length > 0)
+                {
+                    value = int.Parse(header.Substring(startIndex + 1, length), NumberStyles.None, NumberFormatInfo.InvariantInfo);
+                    return true;
+                }
             }
             value = 0;
             return false;

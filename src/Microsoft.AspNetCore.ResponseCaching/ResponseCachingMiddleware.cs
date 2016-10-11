@@ -376,13 +376,11 @@ namespace Microsoft.AspNetCore.ResponseCaching
                         foreach (var tag in ifNoneMatchHeader)
                         {
                             EntityTagHeaderValue requestETag;
-                            if (EntityTagHeaderValue.TryParse(tag, out requestETag))
+                            if (EntityTagHeaderValue.TryParse(tag, out requestETag) &&
+                                eTag.Compare(requestETag, useStrongComparison: false))
                             {
-                                if (eTag.Compare(requestETag, useStrongComparison: false))
-                                {
-                                    context.Logger.LogNotModifiedIfNoneMatchMatched(requestETag);
-                                    return true;
-                                }
+                                context.Logger.LogNotModifiedIfNoneMatchMatched(requestETag);
+                                return true;
                             }
                         }
                     }
@@ -394,16 +392,14 @@ namespace Microsoft.AspNetCore.ResponseCaching
                 if (!StringValues.IsNullOrEmpty(ifUnmodifiedSince))
                 {
                     DateTimeOffset modified;
-                    if (!ParsingHelpers.TryStringToDate(cachedResponseHeaders[HeaderNames.LastModified], out modified))
+                    if (!ParsingHelpers.TryParseDate(cachedResponseHeaders[HeaderNames.LastModified], out modified) &&
+                        !ParsingHelpers.TryParseDate(cachedResponseHeaders[HeaderNames.Date], out modified))
                     {
-                        if (!ParsingHelpers.TryStringToDate(cachedResponseHeaders[HeaderNames.Date], out modified))
-                        {
-                            return false;
-                        }
+                        return false;
                     }
 
                     DateTimeOffset unmodifiedSince;
-                    if (ParsingHelpers.TryStringToDate(ifUnmodifiedSince, out unmodifiedSince))
+                    if (ParsingHelpers.TryParseDate(ifUnmodifiedSince, out unmodifiedSince))
                     {
                         if (modified <= unmodifiedSince)
                         {

@@ -65,7 +65,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 {
                     _parsedResponseDate = true;
                     DateTimeOffset date;
-                    if (ParsingHelpers.TryStringToDate(HttpContext.Response.Headers[HeaderNames.Date], out date))
+                    if (ParsingHelpers.TryParseDate(HttpContext.Response.Headers[HeaderNames.Date], out date))
                     {
                         _responseDate = date;
                     }
@@ -92,7 +92,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 {
                     _parsedResponseExpires = true;
                     DateTimeOffset expires;
-                    if (ParsingHelpers.TryStringToDate(HttpContext.Response.Headers[HeaderNames.Expires], out expires))
+                    if (ParsingHelpers.TryParseDate(HttpContext.Response.Headers[HeaderNames.Expires], out expires))
                     {
                         _responseExpires = expires;
                     }
@@ -113,19 +113,10 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 {
                     _parsedResponseSharedMaxAge = true;
                     _responseSharedMaxAge = null;
-                    foreach (var header in HttpContext.Response.Headers[HeaderNames.CacheControl])
+                    int seconds;
+                    if (ParsingHelpers.TryGetHeaderValue(HttpContext.Response.Headers[HeaderNames.CacheControl], CacheControlValues.SharedMaxAgeString, out seconds))
                     {
-                        var index = header.IndexOf(CacheControlValues.SharedMaxAgeString, StringComparison.OrdinalIgnoreCase);
-                        if (index != -1)
-                        {
-                            index += CacheControlValues.SharedMaxAgeString.Length;
-                            int seconds;
-                            if (ParsingHelpers.TryParseHeaderValue(index, header, out seconds))
-                            {
-                                _responseSharedMaxAge = TimeSpan.FromSeconds(seconds);
-                            }
-                            break;
-                        }
+                        _responseSharedMaxAge = TimeSpan.FromSeconds(seconds);
                     }
                 }
                 return _responseSharedMaxAge;
@@ -140,19 +131,10 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 {
                     _parsedResponseMaxAge = true;
                     _responseMaxAge = null;
-                    foreach (var header in HttpContext.Response.Headers[HeaderNames.CacheControl])
+                    int seconds;
+                    if (ParsingHelpers.TryGetHeaderValue(HttpContext.Response.Headers[HeaderNames.CacheControl], CacheControlValues.MaxAgeString, out seconds))
                     {
-                        var index = header.IndexOf(CacheControlValues.MaxAgeString, StringComparison.OrdinalIgnoreCase);
-                        if (index != -1)
-                        {
-                            index += CacheControlValues.MaxAgeString.Length;
-                            int seconds;
-                            if (ParsingHelpers.TryParseHeaderValue(index, header, out seconds))
-                            {
-                                _responseMaxAge = TimeSpan.FromSeconds(seconds);
-                            }
-                            break;
-                        }
+                        _responseMaxAge = TimeSpan.FromSeconds(seconds);
                     }
                 }
                 return _responseMaxAge;

@@ -30,26 +30,20 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             // Verify request cache-control parameters
             if (!StringValues.IsNullOrEmpty(request.Headers[HeaderNames.CacheControl]))
             {
-                foreach (var header in request.Headers[HeaderNames.CacheControl])
+                if (HttpHeaderParsingHelpers.HeaderContains(request.Headers[HeaderNames.CacheControl], CacheControlValues.NoCacheString))
                 {
-                    if (header.IndexOf(CacheControlValues.NoCacheString, StringComparison.OrdinalIgnoreCase) != -1)
-                    {
-                        context.Logger.LogRequestWithNoCacheNotCacheable();
-                        return false;
-                    }
+                    context.Logger.LogRequestWithNoCacheNotCacheable();
+                    return false;
                 }
             }
             else
             {
                 // Support for legacy HTTP 1.0 cache directive
                 var pragmaHeaderValues = request.Headers[HeaderNames.Pragma];
-                foreach (var directive in pragmaHeaderValues)
+                if (HttpHeaderParsingHelpers.HeaderContains(request.Headers[HeaderNames.Pragma], CacheControlValues.NoCacheString))
                 {
-                    if (string.Equals(CacheControlValues.NoCacheString, directive, StringComparison.OrdinalIgnoreCase))
-                    {
-                        context.Logger.LogRequestWithPragmaNoCacheNotCacheable();
-                        return false;
-                    }
+                    context.Logger.LogRequestWithPragmaNoCacheNotCacheable();
+                    return false;
                 }
             }
 
@@ -61,48 +55,30 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             var responseCacheControlHeader = context.HttpContext.Response.Headers[HeaderNames.CacheControl];
 
             // Only cache pages explicitly marked with public
-            var isPublic = false;
-            foreach (var header in responseCacheControlHeader)
-            {
-                if (header.IndexOf(CacheControlValues.PublicString, StringComparison.OrdinalIgnoreCase) != -1)
-                {
-                    isPublic = true;
-                    break;
-                }
-            }
-            if (!isPublic)
+            if (!HttpHeaderParsingHelpers.HeaderContains(responseCacheControlHeader, CacheControlValues.PublicString))
             {
                 context.Logger.LogResponseWithoutPublicNotCacheable();
                 return false;
             }
 
             // Check no-store
-            foreach (var header in context.HttpContext.Request.Headers[HeaderNames.CacheControl])
+            if (HttpHeaderParsingHelpers.HeaderContains(context.HttpContext.Request.Headers[HeaderNames.CacheControl], CacheControlValues.NoStoreString))
             {
-                if (header.IndexOf(CacheControlValues.NoStoreString, StringComparison.OrdinalIgnoreCase) != -1)
-                {
-                    context.Logger.LogResponseWithNoStoreNotCacheable();
-                    return false;
-                }
+                context.Logger.LogResponseWithNoStoreNotCacheable();
+                return false;
             }
 
-            foreach (var header in responseCacheControlHeader)
+            if (HttpHeaderParsingHelpers.HeaderContains(responseCacheControlHeader, CacheControlValues.NoStoreString))
             {
-                if (header.IndexOf(CacheControlValues.NoStoreString, StringComparison.OrdinalIgnoreCase) != -1)
-                {
-                    context.Logger.LogResponseWithNoStoreNotCacheable();
-                    return false;
-                }
+                context.Logger.LogResponseWithNoStoreNotCacheable();
+                return false;
             }
 
             // Check no-cache
-            foreach (var header in responseCacheControlHeader)
+            if (HttpHeaderParsingHelpers.HeaderContains(responseCacheControlHeader, CacheControlValues.NoCacheString))
             {
-                if (header.IndexOf(CacheControlValues.NoCacheString, StringComparison.OrdinalIgnoreCase) != -1)
-                {
-                    context.Logger.LogResponseWithNoCacheNotCacheable();
-                    return false;
-                }
+                context.Logger.LogResponseWithNoCacheNotCacheable();
+                return false;
             }
 
             var response = context.HttpContext.Response;
@@ -123,13 +99,10 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             }
 
             // Check private
-            foreach (var header in responseCacheControlHeader)
+            if (HttpHeaderParsingHelpers.HeaderContains(responseCacheControlHeader, CacheControlValues.PrivateString))
             {
-                if (header.IndexOf(CacheControlValues.PrivateString, StringComparison.OrdinalIgnoreCase) != -1)
-                {
-                    context.Logger.LogResponseWithPrivateNotCacheable();
-                    return false;
-                }
+                context.Logger.LogResponseWithPrivateNotCacheable();
+                return false;
             }
 
             // Check response code
@@ -191,7 +164,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
 
             // Add min-fresh requirements
             int seconds;
-            if (ParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MinFreshString, out seconds))
+            if (HttpHeaderParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MinFreshString, out seconds))
             {
                 var minFresh = TimeSpan.FromSeconds(seconds);
                 age += minFresh;
@@ -200,7 +173,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
 
             // Validate shared max age, this overrides any max age settings for shared caches
             TimeSpan? cachedSharedMaxAge = null;
-            if (ParsingHelpers.TryGetHeaderValue(cachedControlHeaders, CacheControlValues.SharedMaxAgeString, out seconds))
+            if (HttpHeaderParsingHelpers.TryGetHeaderValue(cachedControlHeaders, CacheControlValues.SharedMaxAgeString, out seconds))
             {
                 cachedSharedMaxAge = TimeSpan.FromSeconds(seconds);
             }
@@ -214,13 +187,13 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             else if (!cachedSharedMaxAge.HasValue)
             {
                 TimeSpan? requestMaxAge = null;
-                if (ParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MaxAgeString, out seconds))
+                if (HttpHeaderParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MaxAgeString, out seconds))
                 {
                     requestMaxAge = TimeSpan.FromSeconds(seconds);
                 }
 
                 TimeSpan? cachedMaxAge = null;
-                if (ParsingHelpers.TryGetHeaderValue(cachedControlHeaders, CacheControlValues.MaxAgeString, out seconds))
+                if (HttpHeaderParsingHelpers.TryGetHeaderValue(cachedControlHeaders, CacheControlValues.MaxAgeString, out seconds))
                 {
                     cachedMaxAge = TimeSpan.FromSeconds(seconds);
                 }
@@ -230,17 +203,14 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 if (age >= lowestMaxAge)
                 {
                     // Must revalidate
-                    foreach (var header in cachedControlHeaders)
+                    if (HttpHeaderParsingHelpers.HeaderContains(cachedControlHeaders, CacheControlValues.MustRevalidateString))
                     {
-                        if (header.IndexOf(CacheControlValues.MustRevalidateString, StringComparison.OrdinalIgnoreCase) != -1)
-                        {
-                            context.Logger.LogExpirationMustRevalidate(age, lowestMaxAge.Value);
-                            return false;
-                        }
+                        context.Logger.LogExpirationMustRevalidate(age, lowestMaxAge.Value);
+                        return false;
                     }
 
                     TimeSpan? requestMaxStale = null;
-                    if (ParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MaxStaleString, out seconds))
+                    if (HttpHeaderParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MaxStaleString, out seconds))
                     {
                         requestMaxStale = TimeSpan.FromSeconds(seconds);
                     }
@@ -259,14 +229,11 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                 {
                     // Validate expiration
                     DateTimeOffset expires;
-                    if (context.CachedResponseHeaders[HeaderNames.Expires].Count > 0 &&
-                        ParsingHelpers.TryParseDate(context.CachedResponseHeaders[HeaderNames.Expires], out expires))
+                    if (HttpHeaderParsingHelpers.TryParseHeaderDate(context.CachedResponseHeaders[HeaderNames.Expires], out expires) &&
+                        context.ResponseTime.Value >= expires)
                     {
-                        if (context.ResponseTime.Value >= expires)
-                        {
-                            context.Logger.LogExpirationExpiresExceeded(context.ResponseTime.Value, expires);
-                            return false;
-                        }
+                        context.Logger.LogExpirationExpiresExceeded(context.ResponseTime.Value, expires);
+                        return false;
                     }
                 }
             }

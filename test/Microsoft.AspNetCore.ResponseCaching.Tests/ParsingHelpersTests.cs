@@ -1,4 +1,7 @@
-﻿using Microsoft.AspNetCore.ResponseCaching.Internal;
+﻿// Copyright (c) .NET Foundation. All rights reserved.
+// Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
+
+using Microsoft.AspNetCore.ResponseCaching.Internal;
 using Microsoft.Extensions.Primitives;
 using Xunit;
 
@@ -15,7 +18,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Tests
         void TryGetHeaderValue_Succeeds(string headerValue, string headerName, int expectedValue)
         {
             int value;
-            Assert.True(ParsingHelpers.TryGetHeaderValue(new StringValues(headerValue), headerName, out value));
+            Assert.True(HttpHeaderParsingHelpers.TryGetHeaderValue(new StringValues(headerValue), headerName, out value));
             Assert.Equal(expectedValue, value);
         }
 
@@ -29,7 +32,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Tests
         void TryGetHeaderValue_Fails(string headerValue, string headerName)
         {
             int value;
-            Assert.False(ParsingHelpers.TryGetHeaderValue(new StringValues(headerValue), headerName, out value));
+            Assert.False(HttpHeaderParsingHelpers.TryGetHeaderValue(new StringValues(headerValue), headerName, out value));
         }
     }
 }

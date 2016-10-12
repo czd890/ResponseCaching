@@ -7,7 +7,7 @@ using Microsoft.Extensions.Primitives;
 
 namespace Microsoft.AspNetCore.ResponseCaching.Internal
 {
-    internal static class ParsingHelpers
+    internal static class HttpHeaderParsingHelpers
     {
         private static readonly string[] DateFormats = new string[] {
             // "r", // RFC 1123, required output format but too strict for input
@@ -32,9 +32,11 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
 
         // Try the various date formats in the order listed above.
         // We should accept a wide verity of common formats, but only output RFC 1123 style dates.
-        internal static bool TryParseDate(string input, out DateTimeOffset result) => DateTimeOffset.TryParseExact(input, DateFormats, DateTimeFormatInfo.InvariantInfo,
+        internal static bool TryParseHeaderDate(string input, out DateTimeOffset result) => DateTimeOffset.TryParseExact(input, DateFormats, DateTimeFormatInfo.InvariantInfo,
                 DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal, out result);
 
+        // Try to get the value of a specific header from a list of headers
+        // e.g. "header1=10, header2=30"
         internal static bool TryGetHeaderValue(StringValues headers, string headerName, out int value)
         {
             value = 0;
@@ -51,6 +53,20 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                     return true;
                 }
             }
+            return false;
+        }
+
+        internal static bool HeaderContains(StringValues headers, string headerName)
+        {
+            foreach (var header in headers)
+            {
+                var index = header.IndexOf(headerName, StringComparison.OrdinalIgnoreCase);
+                if (index != -1)
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
 

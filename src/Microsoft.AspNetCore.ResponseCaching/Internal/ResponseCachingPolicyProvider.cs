@@ -163,20 +163,16 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             var requestCacheControlHeaders = context.HttpContext.Request.Headers[HeaderNames.CacheControl];
 
             // Add min-fresh requirements
-            int seconds;
-            if (HttpHeaderParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MinFreshString, out seconds))
+            TimeSpan? minFresh;
+            if (HttpHeaderParsingHelpers.TryParseHeaderTimeSpan(requestCacheControlHeaders, CacheControlValues.MinFreshString, out minFresh))
             {
-                var minFresh = TimeSpan.FromSeconds(seconds);
-                age += minFresh;
-                context.Logger.LogExpirationMinFreshAdded(minFresh);
+                age += minFresh.Value;
+                context.Logger.LogExpirationMinFreshAdded(minFresh.Value);
             }
 
             // Validate shared max age, this overrides any max age settings for shared caches
-            TimeSpan? cachedSharedMaxAge = null;
-            if (HttpHeaderParsingHelpers.TryGetHeaderValue(cachedControlHeaders, CacheControlValues.SharedMaxAgeString, out seconds))
-            {
-                cachedSharedMaxAge = TimeSpan.FromSeconds(seconds);
-            }
+            TimeSpan? cachedSharedMaxAge;
+            HttpHeaderParsingHelpers.TryParseHeaderTimeSpan(cachedControlHeaders, CacheControlValues.SharedMaxAgeString, out cachedSharedMaxAge);
 
             if (age >= cachedSharedMaxAge)
             {
@@ -186,17 +182,11 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             }
             else if (!cachedSharedMaxAge.HasValue)
             {
-                TimeSpan? requestMaxAge = null;
-                if (HttpHeaderParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MaxAgeString, out seconds))
-                {
-                    requestMaxAge = TimeSpan.FromSeconds(seconds);
-                }
+                TimeSpan? requestMaxAge;
+                HttpHeaderParsingHelpers.TryParseHeaderTimeSpan(requestCacheControlHeaders, CacheControlValues.MaxAgeString, out requestMaxAge);
 
-                TimeSpan? cachedMaxAge = null;
-                if (HttpHeaderParsingHelpers.TryGetHeaderValue(cachedControlHeaders, CacheControlValues.MaxAgeString, out seconds))
-                {
-                    cachedMaxAge = TimeSpan.FromSeconds(seconds);
-                }
+                TimeSpan? cachedMaxAge;
+                HttpHeaderParsingHelpers.TryParseHeaderTimeSpan(cachedControlHeaders, CacheControlValues.MaxAgeString, out cachedMaxAge);
 
                 var lowestMaxAge = cachedMaxAge < requestMaxAge ? cachedMaxAge : requestMaxAge ?? cachedMaxAge;
                 // Validate max age
@@ -209,11 +199,8 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
                         return false;
                     }
 
-                    TimeSpan? requestMaxStale = null;
-                    if (HttpHeaderParsingHelpers.TryGetHeaderValue(requestCacheControlHeaders, CacheControlValues.MaxStaleString, out seconds))
-                    {
-                        requestMaxStale = TimeSpan.FromSeconds(seconds);
-                    }
+                    TimeSpan? requestMaxStale;
+                    HttpHeaderParsingHelpers.TryParseHeaderTimeSpan(requestCacheControlHeaders, CacheControlValues.MaxStaleString, out requestMaxStale);
 
                     // Request allows stale values
                     if (requestMaxStale.HasValue && age - lowestMaxAge < requestMaxStale)

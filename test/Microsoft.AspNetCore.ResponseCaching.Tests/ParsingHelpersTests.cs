@@ -1,6 +1,7 @@
 ﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using System;
 using Microsoft.AspNetCore.ResponseCaching.Internal;
 using Microsoft.Extensions.Primitives;
 using Xunit;
@@ -17,9 +18,9 @@ namespace Microsoft.AspNetCore.ResponseCaching.Tests
         [InlineData("header1=   89   , header2= 42", "header2", 42)]
         void TryGetHeaderValue_Succeeds(string headerValue, string headerName, int expectedValue)
         {
-            int value;
-            Assert.True(HttpHeaderParsingHelpers.TryGetHeaderValue(new StringValues(headerValue), headerName, out value));
-            Assert.Equal(expectedValue, value);
+            TimeSpan? value;
+            Assert.True(HttpHeaderParsingHelpers.TryParseHeaderTimeSpan(new StringValues(headerValue), headerName, out value));
+            Assert.Equal(TimeSpan.FromSeconds(expectedValue), value);
         }
 
         [Theory]
@@ -31,8 +32,8 @@ namespace Microsoft.AspNetCore.ResponseCaching.Tests
         [InlineData(null, null)]
         void TryGetHeaderValue_Fails(string headerValue, string headerName)
         {
-            int value;
-            Assert.False(HttpHeaderParsingHelpers.TryGetHeaderValue(new StringValues(headerValue), headerName, out value));
+            TimeSpan? value;
+            Assert.False(HttpHeaderParsingHelpers.TryParseHeaderTimeSpan(new StringValues(headerValue), headerName, out value));
         }
     }
 }

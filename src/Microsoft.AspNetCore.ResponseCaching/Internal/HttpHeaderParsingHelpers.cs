@@ -37,22 +37,24 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
 
         // Try to get the value of a specific header from a list of headers
         // e.g. "header1=10, header2=30"
-        internal static bool TryGetHeaderValue(StringValues headers, string headerName, out int value)
+        internal static bool TryParseHeaderTimeSpan(StringValues headers, string headerName, out TimeSpan? value)
         {
-            value = 0;
             foreach (var header in headers)
             {
                 var index = header.IndexOf(headerName, StringComparison.OrdinalIgnoreCase);
                 if (index != -1)
                 {
                     index += headerName.Length;
-                    if (!TryParseHeaderValue(index, header, out value))
+                    int seconds;
+                    if (!TryParseHeaderInt(index, header, out seconds))
                     {
                         break;
                     }
+                    value = TimeSpan.FromSeconds(seconds);
                     return true;
                 }
             }
+            value = null;
             return false;
         }
 
@@ -70,7 +72,7 @@ namespace Microsoft.AspNetCore.ResponseCaching.Internal
             return false;
         }
 
-        private static bool TryParseHeaderValue(int startIndex, string header, out int value)
+        private static bool TryParseHeaderInt(int startIndex, string header, out int value)
         {
             var found = false;
             while (startIndex != header.Length)
